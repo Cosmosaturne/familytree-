@@ -1,0 +1,427 @@
+"""
+Visualisation d'un Arbre Généalogique en Turtle
+Auteurs: I.B
+Date : 02/11/2023 - 14/11/2023
+
+Ce programme utilise la bibliothèque Turtle pour visualiser graphiquement un arbre généalogique.
+Il prend en entrée des données sur les relations familiales stockées dans un fichier json et crée
+une représentation visuelle de l'arbre généalogique. De plus, il offre la possibilité de trier
+les personnes en fonction du nombre de descendants ou du nombre de générations grâce à des boutons
+de la bibliothèque Tkinter.
+"""
+
+
+
+# Importation des modules
+import json
+import turtle
+from turtle import Screen
+from tkinter import *
+
+
+def lire_fichier(chemin_du_fichier):
+    """
+    But :
+    Fonction qui extrait et retourne le contenu d'un fichier json grâce à la fonction load de json
+
+    Argument :
+    La localisation du fichier sous la forme str(chemin_du_fichier)
+
+    Return :
+    Contenu du fichier json
+    """
+    with open(chemin_du_fichier, 'r', encoding='utf-8') as file:
+        return json.load(file)
+
+
+
+def construire_mapping(personnes):
+    """
+    But :
+    Relier chaque personne directement à ses enfants
+
+    Argument:
+    Liste de dictionnaires retournée par la fonction lire_fichier
+
+    Return :
+    Liste composée de chaque individu et de ses enfants
+    """
+
+    # Création d'un dictionnaire qui est d'abord vide
+    mapping = {}
+
+    # Boucle qui permet de parcourir chaque personne dans la liste des personnes
+    for personne in personnes:
+        # Obtention du nom de la personne
+        nom = personne["nom"]
+
+        # Obtention de la liste des enfants de la personne
+        # Elle renvoie une liste par défaut vide si la personne n'a pas d'enfants
+        enfants = personne.get("enfants", [])
+
+        # Ajout de la personne et de ses enfants au dictionnaire mapping
+        mapping[nom] = enfants
+
+    return mapping
+def compter_descendants_et_profondeur(nom, mapping, cache_compte = {}, cache_profondeur = {},
+                                      generation_courante = 1):
+    """
+    But :
+    Calculer le nombre de descendants et de générations engendrées par un individu
+
+    Paramètres :
+    Nom de l'individu en str, résultat de la fonction construire_mapping(une liste),
+    les caches qui permettent de calculer le nombre de descendants et la profondeur
+
+    Return :
+    Le nombre de descendants et de générations engendrées par un individu sous forme de string
+    """
+    total_descendants = 0
+    profondeur_max = 0
+
+    # Obtention des enfants de chaque personne
+    enfants = mapping.get(nom, [])
+    # Boucle afin de considérer chaque enfant d'une personne
+    for enfant in enfants:
+
+        # Appel en récursivité et ajout de "1" afin d'indiquer qu'on descend d'une génération dans l'arbre
+        # On applique donc la même logique à chaque enfant pour calculer à nouveau ses desendants
+        descendants_enfant, profondeur_enfant = compter_descendants_et_profondeur(enfant, mapping, cache_compte,
+                                                                                  cache_profondeur,
+                                                                                 generation_courante + 1)
+        # Somme de l'enfant lui-même et le résultat de notre récursivité
+        total_descendants += 1 + descendants_enfant
+
+        # Profondeur devient le maximum entre celle actuelle et celle calculée par la récursivité,
+        # qui est la branche la plus longue de l'arbre
+        profondeur_max = max(profondeur_max, profondeur_enfant)
+
+    # Stockage des informations dans les caches
+    cache_compte[nom] = total_descendants
+
+    if enfants == 0:
+        cache_profondeur[nom] = 0
+
+    else:
+        cache_profondeur[nom] = profondeur_max + 1
+
+    return total_descendants, cache_profondeur[nom]
+
+
+
+
+
+def sauvegarder_donnees(mapping, fichier_donnees):
+    '''
+    But :
+    Sauvegarder les données de la fonction compter_descendants_et_profondeur en liste de dictionnaire
+    Paramètre :
+
+    Résultat de la fonction construire_mapping, et un fichier de données qu'on va créer
+
+    Return :
+
+    Un fichier json est crée avec le nom choisi dans "fichier_donnees"
+    '''
+    donnees = []
+    for personne in mapping:
+        # Calcul des données pour chaque personne
+        total_descendants, profondeur = compter_descendants_et_profondeur(personne, mapping)
+        donnees.append({
+            "nom": personne,
+            "total_descendants": total_descendants,
+            "générations": profondeur - 1 # On soustrait 1 car on ne compte pas la personne elle-même comme une génération
+
+        })
+
+    # Écrire les données dans un fichier JSON
+    with open(fichier_donnees, 'w', encoding='utf-8') as f:
+        # Fonction dump de json permet d'écrire un fichier json avec 2 arguments, les données à écrire et le fichier 
+        # ensure_ascii en False permet de préserver les accents sur les mots comme "générations" ou "Bartolomée"
+        # indent=4 permet de mettre des indentations et ainsi de rendre le fichier json créé plus lisible
+        json.dump(donnees, f, ensure_ascii=False, indent=4 )
+
+
+
+# Fonction qui prend en argument une structure de données (ici le résultat de notre fonction sauvegarder_donnees)
+# et un critère de tri (par descendants ou générations).
+def trier_par_selection(personnes, critere):
+    """
+    But :
+    Trier soit selon la descendance soit selon la génération, si 2 égaux alors trier selon ordre alphabétique
+
+    Argument :
+    Liste de dictionnaires issue de la fonction sauvegarder_donnees
+
+    Return :
+        Pas de return
+    """
+
+    def cle_de_tri(personne):    # Sous-fonction qui renvoie un tuple
+        if critere == "nb_desc":
+            return ( -int(personne["total_descendants"]), personne["nom"]) # Le "-"" est ici pour inverser l'ordre
+        elif critere == "nb_gen":
+            return ( -int(personne["générations"]),personne["nom"]) # Le "-"" est ici pour inverser l'ordre
+    personnes.sort(key=cle_de_tri)
+
+
+
+def brut_gen(parents, infos_descendants, mapping):
+    """
+    But :
+      Calcule les générations de chaque individu dans un arbre généalogique. Les individus sans parents sont
+      considérés comme étant de la génération 0, et pour ceux avec des parents, leur génération est le maximum
+      des générations de leurs parents plus 1.
+
+    Argument :
+      parents : Liste de dictionnaires où chaque dictionnaire contient le 'nom' du parent et ses 'enfants'
+      infos_descendants : Liste de dictionnaires contenant le 'nom' de chaque individu
+
+    Return :
+      Dictionnaire contenant le nom de chaque individu associé à sa génération calculée mais non ajustée
+    """
+
+    # Créer une "carte" des enfants vers leurs parents
+    carte_enfant_parent = {}
+    for parent in parents:
+        for enfant in parent['enfants']:
+            carte_enfant_parent.setdefault(enfant, []).append(parent['nom'])
+
+    # Initialisation d'un dictionnaire pour stocker la génération de chaque individu
+    dictionnaire_generations = {item['nom']: -1 for item in infos_descendants}
+    for parent in mapping.keys():
+        if parent not in dictionnaire_generations:
+            dictionnaire_generations[parent] = -1
+
+    # Fonction récursive pour calculer la génération d'un individu
+    def mettre_a_jour_generation(nom):
+        if dictionnaire_generations[nom] != -1:
+            return dictionnaire_generations[nom]
+
+        if nom not in carte_enfant_parent:
+            # Les individus sans parents sont à la racine, génération 0
+            dictionnaire_generations[nom] = 0
+        else:
+            # Les individus avec parents obtiennent la génération max de leurs parents + 1
+            generations_parents = [mettre_a_jour_generation(parent) for parent in carte_enfant_parent[nom]]
+            dictionnaire_generations[nom] = max(generations_parents) + 1
+
+        return dictionnaire_generations[nom]
+
+    # Calculer la génération de chaque individu
+    for individu in dictionnaire_generations.keys():
+        mettre_a_jour_generation(individu)
+
+    return dictionnaire_generations
+
+def final_gen_parents(parents, dictionnaire_generations):
+    """
+    But :
+      Ajuste les générations pour que dans chaque couple, les deux parents aient la génération la plus
+      élevée. Cela est fait pour chaque enfant dans le dictionnaire des générations
+
+    Argument :
+      parents : Liste de dictionnaires où chaque dictionnaire contient le 'nom' du parent et ses 'enfants'.
+      dictionnaire_generations : Dictionnaire avec le nom de chaque individu et sa génération initialement calculée, "brute"
+
+    Return :
+      Dictionnaire modifié avec les générations ajustées pour chaque couple
+    """
+    for infos_parent in parents:
+        nom_parent = infos_parent['nom']
+        enfants = infos_parent['enfants']
+
+        # Pour chaque enfant, obtenir les parents et ajuster leur génération à la plus élevée des deux
+        for enfant in enfants:
+            if enfant in dictionnaire_generations:
+                parents_enfant = [parent['nom'] for parent in parents if enfant in parent['enfants']]
+                if len(parents_enfant) == 2:  # S'assurer qu'il y a exactement deux parents
+                    parent1, parent2 = parents_enfant
+                    generation_la_plus_elevee = max(dictionnaire_generations[parent1], dictionnaire_generations[parent2])
+                    dictionnaire_generations[parent1] = generation_la_plus_elevee
+                    dictionnaire_generations[parent2] = generation_la_plus_elevee
+
+    return dictionnaire_generations
+def final_gen_freres_soeurs(parents, dictionnaire_generations):
+    """
+    But :
+      Ajuste les générations pour que tous les frères et sœurs aient la même génération, basée sur la génération
+      la plus élevée parmi eux
+
+    Argument :
+      parents : Liste de dictionnaires où chaque dictionnaire contient le 'nom' du parent et ses 'enfants'.
+      dictionnaire_generations : Dictionnaire contenant le nom de chaque individu et sa génération.
+
+    Return :
+      Dictionnaire modifié avec les générations ajustées pour tous les frères et sœurs
+    """
+    for infos_parent in parents:
+        enfants = infos_parent['enfants']
+        if enfants:
+            # Trouver la génération maximale parmi les enfants
+            generation_max = max(dictionnaire_generations[enfant] for enfant in enfants if enfant in dictionnaire_generations)
+            # Ajuster la génération de tous les enfants à cette génération maximale
+            for enfant in enfants:
+                dictionnaire_generations[enfant] = generation_max
+    return dictionnaire_generations
+
+
+
+
+def droite(point1, point2):
+    """"
+    But: une fonction qui dessine une droite entre deux points
+    Paramètres: les coordonnées des deux points
+    Return: une droite sur l'écran turtle
+    """
+    t.goto(point1 - (-12, 12))
+    t.pendown() # Abaisser le stylo pour dessiner
+    t.goto(point2 + (12, 22))
+    t.penup()  # lever le stylo pour ne plus dessiner
+
+
+def tri_PARDESC():
+    """"
+    But:
+    une fonction qui va afficher grâce à turtle
+    une phrase pour chaque personne sur une ligne diffèrente,
+    les phrases sont triées en fonction du total de descendants du personne décrite par cette phrase,
+    il s'agit d'un ordre décroissant du haut vers le bas.
+    Return:
+    Affichage des phrases sur l'écran de turtle.
+    """
+    trier_par_selection(seconde_lecture, "nb_desc")
+    v = -120 # coordoonnée de l'abscisse
+    w = 375 # coordonnée de l'ordonnée
+    t.clear() # effacer le contenu déjà affiché avant l'appui sur le bouton 'Tri par descendants'
+    t.hideturtle() # cacher le curseur/turtle
+    t.penup() # lever le stylo pour ne plus dessiner
+    for personne in seconde_lecture:
+        t.goto(v, w) # position initiale
+        t.pendown() # Abaisser le stylo pour dessiner
+        phrase = f"{personne['nom']} a {personne['total_descendants']} descendants sur {personne['générations']} générations."
+        t.write(phrase) # écrire la phrase en commençant par la position (v,w)
+        t.penup() # lever le stylo pour ne plus dessiner
+        w -= 40  # Déplacer vers le haut pour la prochaine ligne
+
+
+def tri_PARGEN():
+    """"
+    But:
+    une fonction qui va afficher grâce à turtle
+    une phrase pour chaque personne sur une ligne diffèrente,
+    les phrases sont triées en fonction de la génération à laquelle appartient chaque personne,
+    il s'agit d'un ordre décroissant du haut vers le bas.
+    Return:
+    Affichage des phrases sur l'écran de turtle.
+        """
+    trier_par_selection(seconde_lecture, "nb_gen")
+    v = -120 # coordoonnée de l'abscisse
+    w = 375 # coordoonnée de l'ordonnée
+    t.clear()  # effacer le contenu déjà affiché avant l'appui sur le bouton 'Tri par générations'
+    t.hideturtle() # cacher le curseur/turtle
+    t.penup() # lever le stylo pour ne plus dessiner
+    for personne in seconde_lecture:
+        t.goto(v, w) # position initiale
+        t.pendown() # Abaisser le stylo pour dessiner
+        phrase = f"{personne['nom']} a {personne['total_descendants']} descendants sur {personne['générations']} générations."
+        t.write(phrase) # écrire la phrase en commençant par la position (v,w)
+        t.penup() # lever le stylo pour ne plus dessiner
+        w -= 40  # Déplacer vers le haut pour la prochaine ligne
+
+def arbre():
+    """"
+    But:
+    Dessiner un arbre générationnel à partir de génération_final,
+    ce dernier est un dictionnaire qui a comme clé les noms de chaque
+    personne et comme valeur la génération correspondante de la personne
+    Return:
+    Affichage de l'arbre sur l'écran de turtle"""
+
+    t.clear() # effacer le contenu déjà affiché avant l'appui sur le bouton 'Tri par générations'
+        # Obtenez une liste de tuples (clé, valeur) triée par valeurs décroissantes
+    cache_profondeur_tr = sorted(generation_final.items(), key=lambda item: item[1],)
+    cache_profondeur_trie=dict(cache_profondeur_tr)
+
+    n=20
+    t.penup() # lever le stylo pour ne plus dessiner
+    lst=[]
+    donnees={}  #création d'un dictionnaire vide
+    t.hideturtle()  # cacher le curseur/turtle
+    """ Pour chaque personne dans cache_profondeur_tri,
+    si la génération de cette personne se retrouve déjà 
+    dans la liste alors le nom de la prénom va s'écrire
+     sur la même ligne que les autres personnes de sa 
+     génération, les noms des personne de la même génération
+      sont distants autrement il existe un espace entre eux """
+
+    for cle, valeur in cache_profondeur_trie.items():
+        if valeur not in lst: # Vérifiez si la valeur n'est pas déjà présente dans la liste 'lst'
+            n=-125
+            t.goto(n, valeur * -90 +300)
+            t.write(cle)
+            coordonnee = t.pos()
+            donnees.update({cle:coordonnee})
+            lst.append(valeur) # Ajoutez la valeur à la liste 'lst'
+        else: # Déplacez la tortue vers la droite si la valeur est déjà présente
+            n=n+80
+            t.goto(n, valeur * -90 +300) # Déplacez la tortue à la position correspondante sur le canva
+            t.write(cle) # Affichez le nom associé à la clé à la position actuelle de la tortue
+            coordonnee= t.pos() # Enregistrez les coordonnées dans le dictionnaire 'donnees'
+            donnees.update({cle:coordonnee})
+            t.goto(0,0) # retour à la position 0
+    for cle, valeur in mapping.items():
+        if valeur: # Vérifiez si la valeur n'est pas vide
+            for val in valeur:
+                droite(donnees[cle], donnees[val]) #tracer une droite entre les parents et leurs enfants
+
+
+'''
+Exécution du code
+'''
+# Récupération des données sous format json et assignation de ceux ci à une variable lecture_donnees
+# Insérer lieu du fichier sur le PC
+lecture_donnees = lire_fichier("/Users/issameberkani/Downloads/données.json")
+
+
+
+# Stockage du résultat de construire_mapping dans la variable mapping
+mapping = construire_mapping(lecture_donnees)
+# Cette fonction sauvegarde le résultat de la fonction compter_descendants_et_profondeur qui renvoie
+# dans un fichier json un dictionnaire contenant les personnes et le nombre de générations et d'individus générés
+sauvegarder_donnees(mapping, "total_desc_gene.json")
+# Stockage du contenu du fichier json dans la variable 2eme_lecture
+seconde_lecture = lire_fichier("total_desc_gene.json")
+
+
+# Calcul brut des générations
+gen_brut = brut_gen(lecture_donnees, seconde_lecture, mapping)
+# Ajuster pour parents
+gen_net_parents = final_gen_parents(lecture_donnees,gen_brut)
+generation_final = final_gen_freres_soeurs(lecture_donnees,gen_net_parents)
+
+# Création d'un objet turtle
+t = turtle.Turtle()
+t.speed(7)
+v = 200
+w = 550
+screen = Screen()  #Création d'un écran turtle
+screen.setup(width=600, height=800) # Réglage des dimensions de l'écran
+
+canvas = screen.getcanvas() # obtention du canvas de l'écran puis le stockage de ce dernier dans un variable
+# Création du bouton Arbre et sa liaison avec la fonction arbre
+button = Button(canvas.master, text="Arbre", command=arbre)
+# Emballez le bouton pour l'afficher sur le canvas
+button.pack()
+button.place(x=100, y=500)
+# Création du bouton Tri par descendants et sa liaison avec la fonction tri_PARDESC
+button = Button(canvas.master, text="Tri par descendants", command=tri_PARDESC)
+# Emballez le bouton pour l'afficher sur le canvas
+button.pack()
+button.place(x=240, y=500)
+# Création du bouton Tri par génération et sa liaison avec la fonction tri_PARGEN
+button = Button(canvas.master, text="Tri par génération", command=tri_PARGEN)
+# Emballez le bouton pour l'afficher sur le canvas
+button.pack()
+button.place(x=450, y=500)
+screen.exitonclick()
