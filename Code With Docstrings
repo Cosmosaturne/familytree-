@@ -381,7 +381,7 @@ Exécution du code
 '''
 # Récupération des données sous format json et assignation de ceux ci à une variable lecture_donnees
 # Insérer lieu du fichier sur le PC
-lecture_donnees = lire_fichier("/Users/issameberkani/Downloads/données.json")
+lecture_donnees = lire_fichier("/données.json")
 
 
 
